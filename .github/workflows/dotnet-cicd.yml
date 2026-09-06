@@ -21,6 +21,15 @@ jobs:
         with:
           dotnet-version: ${{vars.DOTNET_VERSION}}
 
+      # Cache NuGet packages to speed up builds
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-DotNet
+
       - name: dotnet restore
         run: dotnet restore src/MyApi/MyApi.csproj
 
