@@ -19,4 +19,4 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{secrets.dotnetversion}}
+          dotnet-version: ${{vars.DOTNET_VERSION}}
