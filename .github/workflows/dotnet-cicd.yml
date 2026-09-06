@@ -22,4 +22,4 @@ jobs:
           dotnet-version: ${{vars.DOTNET_VERSION}}
 
       - name: dotnet restore
-        run: dotnet restore **/*.csproj
+        run: dotnet restore src/MyApi/MyApi.csproj
