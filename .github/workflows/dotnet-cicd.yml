@@ -28,4 +28,4 @@ jobs:
         run: dotnet build src/MyApi/MyApi.csproj --configuration Release --no-restore
 
       - name: dotenet test
-        run: dotnet test --no-build --configration Release --verbosity normal
+        run: dotnet test --configuration Release --no-build --verbosity normal
