@@ -1,14 +1,14 @@
-name: .NET production CICD
+name: .NET CI/CD Pipeline
 
 on:
-  workflow_dispatch:
-    inputs:
-      name:
-        type: string
-        required: true
+  workflow_dispatch: # Enables the manual "Run workflow" button
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -19,4 +19,13 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ secrets.DOTNETVERSION }}
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore MyDotNetApp.sln
+
+      - name: Build project
+        run: dotnet build MyDotNetApp.sln --configuration Release --no-restore
+
+      - name: Run unit tests
+        run: dotnet test MyDotNetApp.sln --configuration Release --no-build --verbosity normal
