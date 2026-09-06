@@ -20,3 +20,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{vars.DOTNET_VERSION}}
+
+      - name: dotnet restore
+        run: dotnet restore 
