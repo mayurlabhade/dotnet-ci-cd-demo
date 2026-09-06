@@ -38,3 +38,7 @@ jobs:
 
       - name: dotenet test
         run: dotnet test tests/MyApi.Tests/MyApi.Tests.csproj --configuration Release --verbosity normal
+
+  
+      - name: dotnet publish
+        run: dotnet publish src/MyApi/MyApi.csproj --configuration Release --output ./publish --no-restore
