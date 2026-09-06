@@ -1,0 +1,18 @@
+name: .NET production CICD
+on:
+ push:
+  branches: [dev.main]
+  workflow_dispatch:
+   inputs:
+    name:
+     type: string
+     required: true
+jobs:
+ runs-on: ubuntu-latest
+ steps:
+  - name: checkout
+    uses: actions/checkout@v4
+    with:
+     fetech-depth: 0
+ 
+  
