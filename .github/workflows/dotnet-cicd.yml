@@ -42,3 +42,9 @@ jobs:
   
       - name: dotnet publish
         run: dotnet publish src/MyApi/MyApi.csproj --configuration Release --output ./publish --no-restore
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mayur-DotNet-Artifact-${{runner.os}}
+          path: ./publish
