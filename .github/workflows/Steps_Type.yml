@@ -10,4 +10,4 @@ jobs:
        shell: python
      - uses: actions/setup-dotnet@v4
        with:
-         dotnet-version: "10.*"
+         dotnet-version: "10.x"
