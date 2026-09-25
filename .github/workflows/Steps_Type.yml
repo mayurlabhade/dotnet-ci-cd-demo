@@ -8,6 +8,6 @@ jobs:
      - run: echo "This is Scan Job"
      - run: print("This is Scan Job From Python")
        shell: python
-     - run: actions/setupdotnet@v4
+     - uses: actions/setup-dotnet@v4
        with:
-         dotnet_version: 10.*background:  
+         dotnet-version: 10.*background:  
