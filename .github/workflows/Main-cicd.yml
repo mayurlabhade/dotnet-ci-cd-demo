@@ -1,0 +1,82 @@
+name: .NET CI/CD Pipeline (Production)
+
+on:
+  workflow_dispatch: # Enables manual run button
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  DOTNET_VERSION: '8.0'
+  SONAR_PROJECT_KEY: 'mayurlabhade_dotnet-ci-cd-demo'
+  SONAR_ORGANIZATION: 'mayurlabhade'
+
+jobs:
+  # ============================================
+  # 1. BUILD, SCAN, TEST (Reusable Workflow)
+  # ============================================
+  build-scan-test:
+    name: Build, Scan & Test
+    uses: ./.github/workflows/dotnet-build-scan-test.yml
+    with:
+      dotnet-version: ${{ env.DOTNET_VERSION }}
+      sonar-project-key: ${{ env.SONAR_PROJECT_KEY }}
+      sonar-organization: ${{ env.SONAR_ORGANIZATION }}
+    secrets:
+      sonar-token: ${{ secrets.SONAR_TOKEN }}
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+      nexus-username: ${{ secrets.NEXUS_USERNAME }}
+      nexus-password: ${{ secrets.NEXUS_PASSWORD }}
+      nexus-url: ${{ secrets.NEXUS_URL }}
+
+  # ============================================
+  # 2. DEPLOY TO DEV (Automatic)
+  # ============================================
+  deploy-dev:
+    name: Deploy to Development
+    needs: build-scan-test
+    if: github.ref == 'refs/heads/dev' && github.event_name == 'push'
+    uses: ./.github/workflows/dotnet-deploy.yml
+    with:
+      environment: dev
+      artifact-version: ${{ needs.build-scan-test.outputs.artifact-version }}
+      artifact-name: ${{ needs.build-scan-test.outputs.artifact-name }}
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ secrets.AWS_REGION }}
+
+  # ============================================
+  # 3. DEPLOY TO TEST (Automatic after main merge)
+  # ============================================
+  deploy-test:
+    name: Deploy to Test
+    needs: build-scan-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    uses: ./.github/workflows/dotnet-deploy.yml
+    with:
+      environment: test
+      artifact-version: ${{ needs.build-scan-test.outputs.artifact-version }}
+      artifact-name: ${{ needs.build-scan-test.outputs.artifact-name }}
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ secrets.AWS_REGION }}
+
+  # ============================================
+  # 4. DEPLOY TO PROD (Manual with approval)
+  # ============================================
+  deploy-prod:
+    name: Deploy to Production
+    needs: build-scan-test
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/dotnet-deploy.yml
+    with:
+      environment: prod
+      artifact-version: ${{ needs.build-scan-test.outputs.artifact-version }}
+      artifact-name: ${{ needs.build-scan-test.outputs.artifact-name }}
+    secrets:
+      aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws-region: ${{ secrets.AWS_REGION }}
