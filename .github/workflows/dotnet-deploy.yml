@@ -1,0 +1,124 @@
+name: Deploy to EC2 (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: 'Target environment (dev, test, prod)'
+      artifact-version:
+        required: true
+        type: string
+        description: 'Artifact version to deploy'
+      artifact-name:
+        required: true
+        type: string
+        description: 'Artifact name to deploy'
+    secrets:
+      aws-access-key-id:
+        required: true
+        description: 'AWS Access Key ID'
+      aws-secret-access-key:
+        required: true
+        description: 'AWS Secret Access Key'
+      aws-region:
+        required: true
+        description: 'AWS Region'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.aws-access-key-id }}
+          aws-secret-access-key: ${{ secrets.aws-secret-access-key }}
+          aws-region: ${{ secrets.aws-region }}
+
+      - name: Download artifact from GitHub
+        uses: actions/download-artifact@v4
+        with:
+          name: dotnet-artifact-${{ inputs.artifact-version }}
+          path: ./artifact
+
+      - name: Get EC2 instances by tag
+        id: get-instances
+        run: |
+          # Map environment to tag value
+          case "${{ inputs.environment }}" in
+            dev)
+              TAG_VALUE="Development-server"
+              ;;
+            test)
+              TAG_VALUE="Test-server"
+              ;;
+            prod)
+              TAG_VALUE="Production-server"
+              ;;
+            *)
+              echo "Unknown environment: ${{ inputs.environment }}"
+              exit 1
+              ;;
+          esac
+          
+          # Get instance IDs with the specified tag
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --filters "Name=tag:Role,Values=$TAG_VALUE" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[*].Instances[*].InstanceId' \
+            --output text)
+          
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "No running EC2 instances found with tag Role=$TAG_VALUE"
+            exit 1
+          fi
+          
+          echo "instances=$INSTANCE_IDS" >> $GITHUB_OUTPUT
+          echo "Found instances: $INSTANCE_IDS"
+
+      - name: Deploy to EC2 via AWS Systems Manager
+        run: |
+          INSTANCE_IDS="${{ steps.get-instances.outputs.instances }}"
+          ARTIFACT_NAME="${{ inputs.artifact-name }}"
+          ENVIRONMENT="${{ inputs.environment }}"
+          
+          # Convert instance IDs to array format for SSM
+          IDS_ARRAY=($INSTANCE_IDS)
+          
+          echo "Deploying to $ENVIRONMENT environment..."
+          echo "Instances: ${IDS_ARRAY[@]}"
+          echo "Artifact: $ARTIFACT_NAME"
+          
+          # Deploy commands via SSM (adjust paths as needed for your application)
+          aws ssm send-command \
+            --instance-ids ${IDS_ARRAY[@]} \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands=[
+              "cd /opt/myapi",
+              "sudo systemctl stop myapi || true",
+              "sudo cp /artifact/$ARTIFACT_NAME /opt/myapi/",
+              "cd /opt/myapi && unzip -o $ARTIFACT_NAME",
+              "sudo systemctl start myapi",
+              "sudo systemctl status myapi"
+            ] \
+            --output text
+
+      - name: Verify deployment
+        run: |
+          INSTANCE_IDS="${{ steps.get-instances.outputs.instances }}"
+          IDS_ARRAY=($INSTANCE_IDS)
+          
+          echo "Deployment completed for environment: ${{ inputs.environment }}"
+          echo "Deployed instances:"
+          for instance in ${IDS_ARRAY[@]}; do
+            echo "  - $instance"
+          done
+          
+          echo "Artifact deployed: ${{ inputs.artifact-name }}"
+          echo "Version: ${{ inputs.artifact-version }}"
