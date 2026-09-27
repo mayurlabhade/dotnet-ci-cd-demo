@@ -1,0 +1,144 @@
+name: Build, Scan & Test (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      dotnet-version:
+        required: true
+        type: string
+        description: 'The .NET SDK version to use'
+      sonar-project-key:
+        required: true
+        type: string
+        description: 'SonarCloud project key'
+      sonar-organization:
+        required: true
+        type: string
+        description: 'SonarCloud organization key'
+    secrets:
+      sonar-token:
+        required: true
+        description: 'SonarCloud token'
+      github-token:
+        required: true
+        description: 'GitHub token for SonarCloud'
+      nexus-username:
+        required: true
+        description: 'Nexus repository username'
+      nexus-password:
+        required: true
+        description: 'Nexus repository password'
+      nexus-url:
+        required: true
+        description: 'Nexus repository URL'
+
+jobs:
+  build-scan-test:
+    runs-on: ubuntu-latest
+    
+    outputs:
+      artifact-version: ${{ steps.build.outputs.artifact-version }}
+      artifact-name: ${{ steps.build.outputs.artifact-name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history required for SonarCloud analysis
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'zulu'
+
+      # Cache NuGet packages
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-DotNet
+
+      # Install SonarCloud Global Tool
+      - name: Install SonarCloud scanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      # 1. Begin SonarCloud Analysis
+      - name: Begin SonarCloud scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.github-token }}
+          SONAR_TOKEN: ${{ secrets.sonar-token }}
+        run: |
+          dotnet-sonarscanner begin \
+            /k:"${{ inputs.sonar-project-key }}" \
+            /o:"${{ inputs.sonar-organization }}" \
+            /d:sonar.token="${{ secrets.sonar-token }}" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml"
+
+      # 2. Restore dependencies
+      - name: dotnet restore
+        run: dotnet restore src/MyApi/MyApi.csproj
+
+      # 3. Build
+      - name: dotnet build
+        run: dotnet build src/MyApi/MyApi.csproj --configuration Release --no-restore
+
+      # 4. Test with coverage
+      - name: dotnet test
+        run: dotnet test tests/MyApi.Tests/MyApi.Tests.csproj \
+          --configuration Release \
+          --verbosity normal \
+          --logger="trx" \
+          /p:CollectCoverage=true \
+          /p:CoverageFormat=opencover
+
+      # 5. End SonarCloud Analysis (Uploads metrics to SonarCloud)
+      - name: End SonarCloud scan
+        env:
+          SONAR_TOKEN: ${{ secrets.sonar-token }}
+        run: dotnet-sonarscanner end /d:sonar.token="${{ secrets.sonar-token }}"
+
+      # 6. Publish
+      - name: dotnet publish
+        id: build
+        run: |
+          ARTIFACT_VERSION=$(date +%Y%m%d.%H%M%S)
+          ARTIFACT_NAME="MyApi-$ARTIFACT_VERSION.zip"
+          
+          dotnet publish src/MyApi/MyApi.csproj \
+            --configuration Release \
+            --output ./publish \
+            --no-restore
+          
+          cd ./publish
+          zip -r "../$ARTIFACT_NAME" .
+          cd ..
+          
+          echo "artifact-version=$ARTIFACT_VERSION" >> $GITHUB_OUTPUT
+          echo "artifact-name=$ARTIFACT_NAME" >> $GITHUB_OUTPUT
+
+      # 7. Upload to Nexus Repository
+      - name: Upload artifact to Nexus
+        run: |
+          ARTIFACT_NAME="${{ steps.build.outputs.artifact-name }}"
+          NEXUS_REPO_URL="${{ secrets.nexus-url }}/repository/dotnet-releases"
+          
+          curl -v -u "${{ secrets.nexus-username }}:${{ secrets.nexus-password }}" \
+            --upload-file "$ARTIFACT_NAME" \
+            "$NEXUS_REPO_URL/$ARTIFACT_NAME"
+
+      # 8. Upload as GitHub artifact (for deployment)
+      - name: Upload artifact to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-artifact-${{ steps.build.outputs.artifact-version }}
+          path: ./${{ steps.build.outputs.artifact-name }}
+          retention-days: 30
